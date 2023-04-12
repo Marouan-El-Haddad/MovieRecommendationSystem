@@ -16,7 +16,7 @@ case class Genre(id: Int, name: String)
 
 case class Emotion(emotion: String, confidence: Double)
 
-case class UserPreference(genres: Seq[Int], releaseYear: Option[Int], minimumRating: Option[Double], minPopularity: Option[Double], minVotes: Option[Int])
+case class UserPreference(genres: Seq[Int], releaseYear: Option[Int], minimumRating: Option[Double], minVotes: Option[Int])
 
 object Movie {
   implicit val movieReads: Reads[Movie] = Json.reads[Movie]
@@ -48,11 +48,11 @@ object MovieRecommendationSystem {
       emotion <- getUserEmotion
       _ = println(s"User emotion: ${emotion.emotion}")
 
-      userPreferences = UserPreference(Seq(35, 18), Some(2000), Some(7.0), Some(50), Some(1000))
-      recommendations <- getEmotionBasedMovieRecommendations(emotion, userPreferences, allGenres)
+      userPreferences = UserPreference(Seq(35, 18), Some(2000), Some(7.0), Some(1000))
+      recommendations <- getEmotionBasedMovieRecommendations(emotion, userPreferences)
     } yield {
       println("Movie recommendations:")
-      recommendations.foreach(println)
+      recommendations.foreach(movie => println(s"${movie.title} - Genres: ${movie.genres.map(allGenres).mkString(", ")}"))
     }
 
     futureResult.recover {
@@ -64,7 +64,7 @@ object MovieRecommendationSystem {
     }
   }
 
-  private def getUserEmotion()(implicit system: ActorSystem, backend: SttpBackend[Future, Any]): Future[Emotion] = {
+  private def getUserEmotion(implicit backend: SttpBackend[Future, Any]): Future[Emotion] = {
     val prompt = "The user's emotion is:"
     val maxTokens = 5
     val n = 1
@@ -87,7 +87,7 @@ object MovieRecommendationSystem {
     }
   }
 
-  private def getEmotionBasedMovieRecommendations(emotion: Emotion, userPreferences: UserPreference, allGenres: Map[Int, String])(implicit system: ActorSystem, backend: SttpBackend[Future, Any]): Future[Seq[Movie]] = {
+  private def getEmotionBasedMovieRecommendations(emotion: Emotion, userPreferences: UserPreference)(implicit backend: SttpBackend[Future, Any]): Future[Seq[Movie]] = {
     val genreIds = userPreferences.genres.mkString(",")
     val releaseYear = userPreferences.releaseYear.getOrElse(2000)
     val minimumRating = userPreferences.minimumRating.getOrElse(7.0)
@@ -132,7 +132,7 @@ object MovieRecommendationSystem {
     }
   }
 
-  private def getAllGenres()(implicit system: ActorSystem, backend: SttpBackend[Future, Any]): Future[Map[Int, String]] = {
+  private def getAllGenres(implicit backend: SttpBackend[Future, Any]): Future[Map[Int, String]] = {
     val request = uri"$tmdbUrl/genre/movie/list?api_key=$apiKeyTMDB"
     apiCall(basicRequest.get(request)).map { json =>
       val genres = (json \ "genres").as[Seq[Genre]]
@@ -149,5 +149,5 @@ object MovieRecommendationSystem {
     }
   }
 
-  case class ApiException(message: String, statusCode: StatusCode) extends Exception(message)
+  private case class ApiException(message: String, statusCode: StatusCode) extends Exception(message)
 }
