@@ -33,8 +33,8 @@ case class UserPreference(genres: Seq[Int], releaseYear: Option[Int], minimumRat
 // Main object
 object MovieRecommendationSystem {
 
-  private val apiKeyTMDB = "c3964e503fe06877d1806c536d547529"
-  private val apiKeyOpenAI = "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"
+  private val apiKeyTMDB = "insert here"
+  private val apiKeyOpenAI = "insert here"
   private val tmdbUrl = "https://api.themoviedb.org/3"
   private val openAIUrl = "https://api.openai.com/v1/engines/davinci-codex/completions"
 
