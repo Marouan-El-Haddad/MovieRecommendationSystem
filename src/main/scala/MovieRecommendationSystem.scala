@@ -1,9 +1,7 @@
 import akka.actor.ActorSystem
-import akka.http.scaladsl.Http
-import akka.http.scaladsl.model._
-import akka.http.scaladsl.unmarshalling.Unmarshal
-import akka.stream.SystemMaterializer
 import play.api.libs.json._
+import sttp.capabilities
+import sttp.capabilities.akka.AkkaStreams
 import sttp.client3._
 import sttp.client3.akkahttp.AkkaHttpBackend
 import sttp.model.StatusCode
@@ -35,16 +33,15 @@ object Emotion {
 // Main object
 object MovieRecommendationSystem {
 
-  val apiKeyTMDB = "YOUR_TMDB_API_KEY"
-  val apiKeyOpenAI = "YOUR_OPENAI_API_KEY"
-  val tmdbUrl = "https://api.themoviedb.org/3"
-  val openAIUrl = "https://api.openai.com/v1/engines/davinci-codex/completions"
+  private val apiKeyTMDB = "YOUR_TMDB_API_KEY"
+  private val apiKeyOpenAI = "YOUR_OPENAI_API_KEY"
+  private val tmdbUrl = "https://api.themoviedb.org/3"
+  private val openAIUrl = "https://api.openai.com/v1/engines/davinci-codex/completions"
 
   def main(args: Array[String]): Unit = {
 
-    implicit val system = ActorSystem()
-    implicit val materializer = SystemMaterializer(system).materializer
-    implicit val backend = AkkaHttpBackend()
+    implicit val system: ActorSystem = ActorSystem()
+    implicit val backend: SttpBackend[Future, AkkaStreams with capabilities.WebSockets] = AkkaHttpBackend()
 
     val futureResult = for {
       allGenres <- getAllGenres
@@ -67,7 +64,7 @@ object MovieRecommendationSystem {
     }
   }
 
-  def getUserEmotion()(implicit system: ActorSystem, backend: SttpBackend[Future, Any]): Future[Emotion] = {
+  private def getUserEmotion()(implicit system: ActorSystem, backend: SttpBackend[Future, Any]): Future[Emotion] = {
     val prompt = "The user's emotion is:"
     val maxTokens = 5
     val n = 1
@@ -90,20 +87,10 @@ object MovieRecommendationSystem {
     }
   }
 
-  def apiCall(request: Request[Either[String, String], Any])(implicit backend: SttpBackend[Future, Any]): Future[JsValue] = {
-    request.send().map { r =>
-      r.body match {
-        case Right(body) => Json.parse(body)
-        case Left(error) => throw ApiException(s"Error fetching data from API: ${r.code}", r.code)
-      }
-    }
-  }
-
-  def getEmotionBasedMovieRecommendations(emotion: Emotion, userPreferences: UserPreference, allGenres: Map[Int, String])(implicit system: ActorSystem, backend: SttpBackend[Future, Any]): Future[Seq[Movie]] = {
+  private def getEmotionBasedMovieRecommendations(emotion: Emotion, userPreferences: UserPreference, allGenres: Map[Int, String])(implicit system: ActorSystem, backend: SttpBackend[Future, Any]): Future[Seq[Movie]] = {
     val genreIds = userPreferences.genres.mkString(",")
     val releaseYear = userPreferences.releaseYear.getOrElse(2000)
     val minimumRating = userPreferences.minimumRating.getOrElse(7.0)
-    val minPopularity = userPreferences.minPopularity.getOrElse(50)
     val minVotes = userPreferences.minVotes.getOrElse(1000)
 
     val uri = uri"$tmdbUrl/discover/movie?api_key=$apiKeyTMDB&with_genres=$genreIds&primary_release_year.gte=$releaseYear&vote_average.gte=$minimumRating&sort_by=popularity.desc&page=1&vote_count.gte=$minVotes"
@@ -145,11 +132,20 @@ object MovieRecommendationSystem {
     }
   }
 
-  def getAllGenres()(implicit system: ActorSystem, backend: SttpBackend[Future, Any]): Future[Map[Int, String]] = {
+  private def getAllGenres()(implicit system: ActorSystem, backend: SttpBackend[Future, Any]): Future[Map[Int, String]] = {
     val request = uri"$tmdbUrl/genre/movie/list?api_key=$apiKeyTMDB"
     apiCall(basicRequest.get(request)).map { json =>
       val genres = (json \ "genres").as[Seq[Genre]]
       genres.map(genre => genre.id -> genre.name).toMap
+    }
+  }
+
+  private def apiCall(request: Request[Either[String, String], Any])(implicit backend: SttpBackend[Future, Any]): Future[JsValue] = {
+    request.send(backend).map { r =>
+      r.body match {
+        case Right(body) => Json.parse(body)
+        case Left(_) => throw ApiException(s"Error fetching data from API: ${r.code}", r.code)
+      }
     }
   }
 
