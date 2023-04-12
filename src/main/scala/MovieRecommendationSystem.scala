@@ -12,29 +12,29 @@ import scala.concurrent.ExecutionContext.Implicits.global
 // Case classes and Json formatters
 case class Movie(id: Int, title: String, genres: Seq[Int], popularity: Double, voteAverage: Double, overview: String, releaseDate: String, voteCount: Int)
 
-case class Genre(id: Int, name: String)
-
-case class Emotion(emotion: String, confidence: Double)
-
-case class UserPreference(genres: Seq[Int], releaseYear: Option[Int], minimumRating: Option[Double], minVotes: Option[Int])
-
 object Movie {
   implicit val movieReads: Reads[Movie] = Json.reads[Movie]
 }
+
+case class Genre(id: Int, name: String)
 
 object Genre {
   implicit val genreReads: Reads[Genre] = Json.reads[Genre]
 }
 
+case class Emotion(emotion: String, confidence: Double)
+
 object Emotion {
   implicit val emotionFormat: Format[Emotion] = Json.format[Emotion]
 }
 
+case class UserPreference(genres: Seq[Int], releaseYear: Option[Int], minimumRating: Option[Double], minVotes: Option[Int])
+
 // Main object
 object MovieRecommendationSystem {
 
-  private val apiKeyTMDB = "YOUR_TMDB_API_KEY"
-  private val apiKeyOpenAI = "YOUR_OPENAI_API_KEY"
+  private val apiKeyTMDB = "c3964e503fe06877d1806c536d547529"
+  private val apiKeyOpenAI = "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"
   private val tmdbUrl = "https://api.themoviedb.org/3"
   private val openAIUrl = "https://api.openai.com/v1/engines/davinci-codex/completions"
 
@@ -49,7 +49,7 @@ object MovieRecommendationSystem {
       _ = println(s"User emotion: ${emotion.emotion}")
 
       userPreferences = UserPreference(Seq(35, 18), Some(2000), Some(7.0), Some(1000))
-      recommendations <- getEmotionBasedMovieRecommendations(emotion, userPreferences)
+      recommendations <- getEmotionBasedMovieRecommendations(emotion, userPreferences, allGenres)
     } yield {
       println("Movie recommendations:")
       recommendations.foreach(movie => println(s"${movie.title} - Genres: ${movie.genres.map(allGenres).mkString(", ")}"))
@@ -83,17 +83,24 @@ object MovieRecommendationSystem {
     apiCall(request).map { json =>
       val choices = (json \ "choices").as[JsArray].value
       val emotionText = (choices.head \ "text").as[String].trim
-      Emotion(emotionText, 1.0) // Confidence is set to 1.0 as an example
+      val supportedEmotions = Set("happy", "sad", "angry", "fearful", "surprised", "neutral")
+
+      if (supportedEmotions.contains(emotionText)) {
+        Emotion(emotionText, 1.0) // Confidence is set to 1.0 as an example
+      } else {
+        throw ApiException(s"Unexpected emotion generated: $emotionText", StatusCode.BadRequest)
+      }
     }
   }
 
-  private def getEmotionBasedMovieRecommendations(emotion: Emotion, userPreferences: UserPreference)(implicit backend: SttpBackend[Future, Any]): Future[Seq[Movie]] = {
+  // Passing allGenres as a parameter
+  private def getEmotionBasedMovieRecommendations(emotion: Emotion, userPreferences: UserPreference, allGenres: Map[Int, String])(implicit backend: SttpBackend[Future, Any]): Future[Seq[Movie]] = {
     val genreIds = userPreferences.genres.mkString(",")
     val releaseYear = userPreferences.releaseYear.getOrElse(2000)
     val minimumRating = userPreferences.minimumRating.getOrElse(7.0)
     val minVotes = userPreferences.minVotes.getOrElse(1000)
 
-    val uri = uri"$tmdbUrl/discover/movie?api_key=$apiKeyTMDB&with_genres=$genreIds&primary_release_year.gte=$releaseYear&vote_average.gte=$minimumRating&sort_by=popularity.desc&page=1&vote_count.gte=$minVotes"
+    val uri = uri"$tmdbUrl/discover/movie?api_key=$apiKeyTMDB&with_genres=$genreIds&primary_release_date.gte=$releaseYear-01-01&vote_average.gte=$minimumRating&sort_by=popularity.desc&page=1&vote_count.gte=$minVotes"
 
     apiCall(basicRequest.get(uri)).map { json =>
       val moviesJson = (json \ "results").as[JsArray].value
